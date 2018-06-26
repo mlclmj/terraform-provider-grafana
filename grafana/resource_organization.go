@@ -1,14 +1,31 @@
 package grafana
 
 import (
+    "crypto/rand"
 	"errors"
 	"fmt"
 	"github.com/hashicorp/terraform/helper/schema"
+    "github.com/grafana/grafana/pkg/api/dtos"
 	gapi "github.com/mlclmj/go-grafana-api"
 	"log"
 	"strconv"
 	"strings"
 )
+
+type OrgUser struct {
+    Id      int64
+    Email   string
+    Role    string
+}
+
+const UserAdd = 10
+const UserUpdate = 20
+const UserRemove = 30
+
+type UserChange struct {
+    Type int8
+    User OrgUser
+}
 
 func ResourceOrganization() *schema.Resource {
 	return &schema.Resource{
@@ -34,6 +51,15 @@ will keep Terraform from removing them from managed organizations. Specifying a
 blank string here will cause Terraform to remove the default admin user from the
 organization.`,
 			},
+            "create_users": &schema.Schema{
+                Type:       schema.TypeBool,
+                Optional: true,
+                Default: true,
+                Description: `When set to true (the default if unspecified) users
+will be created for any specified organization user not already registered in
+Grafana. This is particularly userful for authentication integrations such as
+google_auth and github_auth.`,
+            },
 			"org_id": &schema.Schema{
 				Type:     schema.TypeInt,
 				Computed: true,
@@ -80,7 +106,7 @@ func CreateOrganization(d *schema.ResourceData, meta interface{}) error {
 		return errors.New(fmt.Sprintf("Error: A Grafana Organization with the name '%s' already exists.", name))
 	}
 	if err != nil {
-		log.Printf("[ERROR] creating Grafana organization %s", name)
+		log.Printf("[DEBUG] creating Grafana organization %s", name)
 		return err
 	}
 	resp, err := client.OrgByName(name)
@@ -88,7 +114,7 @@ func CreateOrganization(d *schema.ResourceData, meta interface{}) error {
 		return err
 	}
 	d.SetId(strconv.FormatInt(resp.Id, 10))
-	return CreateUsers(d, meta)
+	return UpdateUsers(d, meta)
 }
 
 func ReadOrganization(d *schema.ResourceData, meta interface{}) error {
@@ -111,7 +137,7 @@ func UpdateOrganization(d *schema.ResourceData, meta interface{}) error {
 	orgId, _ := strconv.ParseInt(d.Id(), 10, 64)
 	if d.HasChange("name") {
 		oldName, newName := d.GetChange("name")
-		log.Printf("[ERROR] org name has been updated from %s to %s", oldName.(string), newName.(string))
+		log.Printf("[DEBUG] org name has been updated from %s to %s", oldName.(string), newName.(string))
 		name := d.Get("name").(string)
 		err := client.UpdateOrg(orgId, name)
 		if err != nil {
@@ -140,19 +166,9 @@ func ExistsOrganization(d *schema.ResourceData, meta interface{}) (bool, error) 
 	return true, err
 }
 
-func CreateUsers(d *schema.ResourceData, meta interface{}) error {
-	_, newUsers := collectUsers(d)
-	userMap, err := userMap(meta)
-	if err != nil {
-		return err
-	}
-	orgId, _ := strconv.ParseInt(d.Id(), 10, 64)
-	return addUsers(meta, orgId, newUsers, userMap)
-}
-
 func ReadUsers(d *schema.ResourceData, meta interface{}) error {
 	client := meta.(*gapi.Client)
-	orgId, _ := strconv.ParseInt(d.Id(), 10, 64)
+    orgId, _ := strconv.ParseInt(d.Id(), 10, 64)
 	orgUsers, err := client.OrgUsers(orgId)
 	if err != nil {
 		return err
@@ -172,107 +188,120 @@ func ReadUsers(d *schema.ResourceData, meta interface{}) error {
 
 func UpdateUsers(d *schema.ResourceData, meta interface{}) error {
 	oldUsers, newUsers := collectUsers(d)
-	add, update, remove := userDiff(oldUsers, newUsers)
+	changes := changes(oldUsers, newUsers)
 	orgId, _ := strconv.ParseInt(d.Id(), 10, 64)
-	userMap, err := userMap(meta)
-	if err != nil {
+    changes, err := addIds(d, meta, changes)
+    if err != nil {
 		return err
 	}
-	addUsers(meta, orgId, add, userMap)
-	updateUsers(meta, orgId, update, userMap)
-	removeUsers(meta, orgId, remove, userMap)
-	return nil
+    return applyChanges(meta, orgId, changes)
 }
 
-func userMap(meta interface{}) (map[string]int64, error) {
-	client := meta.(*gapi.Client)
-	userMap := make(map[string]int64)
-	users, err := client.Users()
-	if err != nil {
-		return userMap, err
-	}
-	for _, user := range users {
-		userMap[user.Email] = user.Id
-	}
-	return userMap, nil
-}
-
-func collectUsers(d *schema.ResourceData) (map[string]string, map[string]string) {
+func collectUsers(d *schema.ResourceData) (map[string]OrgUser, map[string]OrgUser) {
 	roles := []string{"admins", "editors", "viewers"}
-	oldUsers, newUsers := make(map[string]string), make(map[string]string)
+	oldUsers, newUsers := make(map[string]OrgUser), make(map[string]OrgUser)
 	for _, role := range roles {
 		roleName := strings.Title(role[:len(role)-1])
 		old, new := d.GetChange(role)
 		for _, u := range old.([]interface{}) {
-			oldUsers[u.(string)] = roleName
+			oldUsers[u.(string)] = OrgUser{0, u.(string), roleName}
 		}
 		for _, u := range new.([]interface{}) {
-			newUsers[u.(string)] = roleName
+			newUsers[u.(string)] = OrgUser{0, u.(string), roleName}
 		}
 	}
 	return oldUsers, newUsers
 }
 
-func userDiff(oldUsers, newUsers map[string]string) (map[string]string, map[string]string, []string) {
-	add, update, remove := make(map[string]string), make(map[string]string), []string{}
-	for user, role := range newUsers {
-		oldRole, ok := oldUsers[user]
+func changes(oldUsers, newUsers map[string]OrgUser) map[string]UserChange {
+	changes := make(map[string]UserChange)
+	for _, user := range newUsers {
+		oUser, ok := oldUsers[user.Email]
 		if !ok {
-			add[user] = role
+            changes[user.Email] = UserChange{UserAdd, user}
 			continue
 		}
-		if oldRole != role {
-			update[user] = role
+		if oUser.Role != user.Role {
+            changes[user.Email] = UserChange{UserUpdate, user}
 		}
 	}
-	for user, _ := range oldUsers {
-		if _, ok := newUsers[user]; !ok {
-			remove = append(remove, user)
+	for _, user := range oldUsers {
+		if _, ok := newUsers[user.Email]; !ok {
+            changes[user.Email] = UserChange{UserRemove, user}
 		}
 	}
-	return add, update, remove
+	return changes
 }
 
-func addUsers(meta interface{}, orgId int64, users map[string]string, userMap map[string]int64) error {
+func addIds(d *schema.ResourceData, meta interface{}, changes map[string]UserChange) (map[string]UserChange, error) {
 	client := meta.(*gapi.Client)
-	for user, role := range users {
-		if _, ok := userMap[user]; !ok {
-			log.Printf("[WARN] Skipping adding user '%s'. User is not known to Grafana.", user)
-			continue
-		}
-		if err := client.AddOrgUser(orgId, user, role); err != nil {
-			return err
-		}
+	gUserMap := make(map[string]int64)
+	gUsers, err := client.Users()
+	if err != nil {
+		return nil, err
 	}
-	return nil
+	for _, u := range gUsers {
+		gUserMap[u.Email] = u.Id
+	}
+    output := make(map[string]UserChange)
+    create := d.Get("create_users").(bool)
+    for _, change := range changes {
+        id, ok := gUserMap[change.User.Email]
+        if !ok && !create {
+            log.Printf("[DEBUG] Creating users disabled. Skipping user '%s'. User is not known to Grafana.", change.User.Email)
+            continue
+        }
+        if !ok && create {
+            log.Printf("[DEBUG] Creating user '%s'. User is not known to Grafana.", change.User.Email)
+            err := createUser(meta, change.User.Email)
+            if err != nil {
+                return nil, err
+            }
+            user, err := client.UserByEmail(change.User.Email)
+            if err != nil {
+                return nil, err
+            }
+            id = user.Id
+        }
+        change.User.Id = id
+        output[change.User.Email] = change
+    }
+	return output, nil
 }
 
-func updateUsers(meta interface{}, orgId int64, users map[string]string, userMap map[string]int64) error {
-	client := meta.(*gapi.Client)
-	for user, role := range users {
-		userId, ok := userMap[user]
-		if !ok {
-			log.Printf("[WARN] Skipping updating user '%s'. User is not known to Grafana.", user)
-			continue
-		}
-		if err := client.UpdateOrgUser(orgId, userId, role); err != nil {
-			return err
-		}
-	}
-	return nil
+func createUser(meta interface{}, user string) error {
+    client := meta.(*gapi.Client)
+    n := 64
+    bytes := make([]byte, n)
+    _, err := rand.Read(bytes)
+    if err != nil {
+        return err
+    }
+    pass := string(bytes[:n])
+    log.Printf("[DEBUG] creating user %s with random password", user, pass)
+    err = client.CreateUserForm(dtos.AdminCreateUserForm{user, user, user, pass})
+    if err != nil {
+        return err
+    }
+    return nil
 }
 
-func removeUsers(meta interface{}, orgId int64, users []string, userMap map[string]int64) error {
-	client := meta.(*gapi.Client)
-	for _, user := range users {
-		userId, ok := userMap[user]
-		if !ok {
-			log.Printf("[WARN] Skipping deleting user '%s'. User is not known to Grafana.", user)
-			continue
-		}
-		if err := client.RemoveOrgUser(orgId, userId); err != nil {
-			return err
-		}
-	}
-	return nil
+func applyChanges(meta interface{}, orgId int64, changes map[string]UserChange) error {
+    var err error
+    client := meta.(*gapi.Client)
+    for _, change := range changes {
+        u := change.User
+        switch change.Type {
+        case UserAdd:
+            err = client.AddOrgUser(orgId, u.Email, u.Role)
+        case UserUpdate:
+            err = client.UpdateOrgUser(orgId, u.Id, u.Role)
+        case UserRemove:
+            err = client.RemoveOrgUser(orgId, u.Id)
+        }
+        if err != nil {
+            return err
+        }
+    }
+    return err
 }
