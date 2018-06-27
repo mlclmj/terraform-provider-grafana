@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"github.com/hashicorp/terraform/helper/schema"
-    "github.com/grafana/grafana/pkg/api/dtos"
 	gapi "github.com/mlclmj/go-grafana-api"
 	"log"
 	"strconv"
@@ -283,7 +282,7 @@ func createUser(meta interface{}, user string) error {
     }
     pass := string(bytes[:n])
     log.Printf("[DEBUG] creating user %s with random password", user, pass)
-    err = client.CreateUserForm(dtos.AdminCreateUserForm{user, user, user, pass})
+    err = client.CreateUser(user, user, user, pass)
     if err != nil {
         return err
     }
