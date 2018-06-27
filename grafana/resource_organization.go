@@ -122,7 +122,11 @@ func ReadOrganization(d *schema.ResourceData, meta interface{}) error {
 	orgId, _ := strconv.ParseInt(d.Id(), 10, 64)
 	resp, err := client.Org(orgId)
 	if err != nil {
-		d.SetId("")
+        if err.Error() == "404 Not Found" {
+			log.Printf("[WARN] removing organization %s from state because it no longer exists in grafana", d.Id())
+			d.SetId("")
+            return nil
+        }
 		return err
 	}
 	d.Set("name", resp.Name)
