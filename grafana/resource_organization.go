@@ -5,7 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/hashicorp/terraform/helper/schema"
-	gapi "github.com/mlclmj/go-grafana-api"
+	gapi "github.com/teemupo/go-grafana-api"
 	"log"
 	"strconv"
 	"strings"
@@ -100,7 +100,7 @@ here must already exist in Grafana.`,
 func CreateOrganization(d *schema.ResourceData, meta interface{}) error {
 	client := meta.(*gapi.Client)
 	name := d.Get("name").(string)
-	err := client.NewOrg(name)
+	orgId, err := client.NewOrg(name)
 	if err != nil && err.Error() == "409 Conflict" {
 		return errors.New(fmt.Sprintf("Error: A Grafana Organization with the name '%s' already exists.", name))
 	}
@@ -108,11 +108,7 @@ func CreateOrganization(d *schema.ResourceData, meta interface{}) error {
 		log.Printf("[DEBUG] creating Grafana organization %s", name)
 		return err
 	}
-	resp, err := client.OrgByName(name)
-	if err != nil {
-		return err
-	}
-	d.SetId(strconv.FormatInt(resp.Id, 10))
+	d.SetId(strconv.FormatInt(orgId, 10))
 	return UpdateUsers(d, meta)
 }
 
@@ -256,15 +252,11 @@ func addIds(d *schema.ResourceData, meta interface{}, changes map[string]UserCha
         }
         if !ok && create {
             log.Printf("[DEBUG] Creating user '%s'. User is not known to Grafana.", change.User.Email)
-            err := createUser(meta, change.User.Email)
+            user, err := createUser(meta, change.User.Email)
             if err != nil {
                 return nil, err
             }
-            user, err := client.UserByEmail(change.User.Email)
-            if err != nil {
-                return nil, err
-            }
-            id = user.Id
+            id = user
         }
         change.User.Id = id
         output[change.User.Email] = change
@@ -272,21 +264,21 @@ func addIds(d *schema.ResourceData, meta interface{}, changes map[string]UserCha
 	return output, nil
 }
 
-func createUser(meta interface{}, user string) error {
+func createUser(meta interface{}, user string) (int64, error) {
     client := meta.(*gapi.Client)
-    n := 64
+    id, n := int64(0), 64
     bytes := make([]byte, n)
     _, err := rand.Read(bytes)
     if err != nil {
-        return err
+        return id, err
     }
     pass := string(bytes[:n])
     log.Printf("[DEBUG] creating user %s with random password", user, pass)
-    err = client.CreateUser(user, user, user, pass)
+    id, err = client.CreateUser(user, user, user, pass)
     if err != nil {
-        return err
+        return id, err
     }
-    return nil
+    return id, err
 }
 
 func applyChanges(meta interface{}, orgId int64, changes map[string]UserChange) error {

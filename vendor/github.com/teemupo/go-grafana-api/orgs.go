@@ -35,12 +35,86 @@ func (c *Client) Orgs() ([]Org, error) {
 	return orgs, err
 }
 
-func (c *Client) NewOrg(name string) error {
-	settings := map[string]string{
+func (c *Client) OrgByName(name string) (Org, error) {
+	org := Org{}
+	req, err := c.newRequest("GET", fmt.Sprintf("/api/orgs/name/%s",  name), nil)
+	if err != nil {
+		return org, err
+	}
+	resp, err := c.Do(req)
+	if err != nil {
+		return org, err
+	}
+	if resp.StatusCode != 200 {
+		return org, errors.New(resp.Status)
+	}
+	data, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		return org, err
+	}
+	err = json.Unmarshal(data, &org)
+	return org, err
+}
+
+func (c *Client) Org(id int64) (Org, error) {
+	org := Org{}
+	req, err := c.newRequest("GET", fmt.Sprintf("/api/orgs/%d",  id), nil)
+	if err != nil {
+		return org, err
+	}
+	resp, err := c.Do(req)
+	if err != nil {
+		return org, err
+	}
+	if resp.StatusCode != 200 {
+		return org, errors.New(resp.Status)
+	}
+	data, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		return org, err
+	}
+	err = json.Unmarshal(data, &org)
+	return org, err
+}
+
+func (c *Client) NewOrg(name string) (int64, error) {
+	dataMap := map[string]string{
 		"name": name,
 	}
-	data, err := json.Marshal(settings)
+	data, err := json.Marshal(dataMap)
+	id := int64(0)
 	req, err := c.newRequest("POST", "/api/orgs", bytes.NewBuffer(data))
+	if err != nil {
+		return id, err
+	}
+	resp, err := c.Do(req)
+	if err != nil {
+		return id, err
+	}
+	if resp.StatusCode != 200 {
+		return id, errors.New(resp.Status)
+	}
+	data, err = ioutil.ReadAll(resp.Body)
+	if err != nil {
+		return id, err
+	}
+	tmp := struct {
+		Id int64 `json:"orgId"`
+	}{}
+	err = json.Unmarshal(data, &tmp)
+	if err != nil {
+		return id, err
+	}
+	id = tmp.Id
+	return id, err
+}
+
+func (c *Client) UpdateOrg(id int64, name string) error {
+	dataMap := map[string]string{
+		"name": name,
+	}
+	data, err := json.Marshal(dataMap)
+	req, err := c.newRequest("PUT", fmt.Sprintf("/api/orgs/%d", id), bytes.NewBuffer(data))
 	if err != nil {
 		return err
 	}
