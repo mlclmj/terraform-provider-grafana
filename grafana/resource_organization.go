@@ -5,7 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/hashicorp/terraform/helper/schema"
-	gapi "github.com/teemupo/go-grafana-api"
+	gapi "github.com/nytm/go-grafana-api"
 	"log"
 	"strconv"
 	"strings"
@@ -293,9 +293,9 @@ func applyChanges(meta interface{}, orgId int64, changes map[string]UserChange) 
 		case UserRemove:
 			err = client.RemoveOrgUser(orgId, u.Id)
 		}
-		if err != nil {
+		if err != nil && err.Error() != "409 Conflict" {
 			return err
 		}
 	}
-	return err
+	return nil
 }
