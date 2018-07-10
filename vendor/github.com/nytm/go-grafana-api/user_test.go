@@ -48,7 +48,7 @@ func TestUserByEmail(t *testing.T) {
     user := User{
 		Id: 1,
 		Email: "admin@localhost",
-        Name: "",
+    Name: "",
 		Login: "admin",
 		IsAdmin: true,
 	}

@@ -39,9 +39,10 @@ func New(auth, baseURL string) (*Client, error) {
 	}, nil
 }
 
-func (c *Client) newRequest(method, requestPath string, body io.Reader) (*http.Request, error) {
+func (c *Client) newRequest(method, requestPath string, query url.Values, body io.Reader) (*http.Request, error) {
 	url := c.baseURL
 	url.Path = path.Join(url.Path, requestPath)
+	url.RawQuery = query.Encode()
 	req, err := http.NewRequest(method, url.String(), body)
 	if err != nil {
 		return req, err
@@ -55,30 +56,6 @@ func (c *Client) newRequest(method, requestPath string, body io.Reader) (*http.R
 			log.Println("request to ", url.String(), "with no body data")
 		} else {
 			log.Println("request to ", url.String(), "with body data", body.(*bytes.Buffer).String())
-		}
-	}
-
-	req.Header.Add("Content-Type", "application/json")
-	return req, err
-}
-
-func (c *Client) newQueryRequest(method, requestPath string, query string) (*http.Request, error) {
-	url := c.baseURL
-	url.Path = path.Join(url.Path, requestPath)
-	url.RawQuery = query
-	req, err := http.NewRequest(method, url.String(), nil)
-	if err != nil {
-		return req, err
-	}
-	if c.key != "" {
-		req.Header.Add("Authorization", c.key)
-	}
-
-	if os.Getenv("GF_LOG") != "" {
-		if query == "" {
-			log.Println("request to ", url.String(), "with no query data")
-		} else {
-			log.Println("request to ", url.String(), "with query data", query)
 		}
 	}
 

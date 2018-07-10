@@ -9,16 +9,16 @@ import (
 )
 
 type OrgUser struct {
-	OrgId   int64
-	UserId  int64
-	Email   string
-	Login   string
-	Role    string
+	OrgId   int64  `json:"orgId"`
+	UserId  int64  `json:"userId"`
+	Email   string `json:"email"`
+	Login   string `json:"login"`
+	Role    string `json:"role"`
 }
 
-func (c *Client) OrgUsers(id int64) ([]OrgUser, error) {
+func (c *Client) OrgUsers(orgId int64) ([]OrgUser, error) {
 	users := make([]OrgUser, 0)
-	req, err := c.newRequest("GET", fmt.Sprintf("/api/orgs/%d/users", id), nil)
+	req, err := c.newRequest("GET", fmt.Sprintf("/api/orgs/%d/users", orgId), nil, nil)
 	if err != nil {
 		return users, err
 	}
@@ -46,7 +46,7 @@ func (c *Client) AddOrgUser(orgId int64, user, role string) error {
 		"role": role,
 	}
 	data, err := json.Marshal(dataMap)
-	req, err := c.newRequest("POST", fmt.Sprintf("/api/orgs/%d/users", orgId), bytes.NewBuffer(data))
+	req, err := c.newRequest("POST", fmt.Sprintf("/api/orgs/%d/users", orgId), nil, bytes.NewBuffer(data))
 	if err != nil {
 		return err
 	}
@@ -65,7 +65,7 @@ func (c *Client) UpdateOrgUser(orgId, userId int64, role string) error {
 		"role": role,
 	}
 	data, err := json.Marshal(dataMap)
-	req, err := c.newRequest("PATCH", fmt.Sprintf("/api/orgs/%d/users/%d", orgId, userId), bytes.NewBuffer(data))
+	req, err := c.newRequest("PATCH", fmt.Sprintf("/api/orgs/%d/users/%d", orgId, userId), nil, bytes.NewBuffer(data))
 	if err != nil {
 		return err
 	}
@@ -80,7 +80,7 @@ func (c *Client) UpdateOrgUser(orgId, userId int64, role string) error {
 }
 
 func (c *Client) RemoveOrgUser(orgId, userId int64) error {
-	req, err := c.newRequest("DELETE", fmt.Sprintf("/api/orgs/%d/users/%d", orgId, userId), nil)
+	req, err := c.newRequest("DELETE", fmt.Sprintf("/api/orgs/%d/users/%d", orgId, userId), nil, nil)
 	if err != nil {
 		return err
 	}

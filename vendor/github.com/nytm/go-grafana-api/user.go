@@ -3,21 +3,22 @@ package gapi
 import (
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io/ioutil"
+	"net/url"
 )
 
 type User struct {
-	Id      int64 	`json:"id"`
-	Email   string	`json:"email"`
-	Name    string	`json:"name"`
-	Login   string	`json:"login"`
-	IsAdmin bool	`json:"isAdmin"`
+	Id       int64 	`json:"id,omitempty"`
+	Email    string	`json:"email,omitempty"`
+	Name     string	`json:"name,omitempty"`
+	Login    string	`json:"login,omitempty"`
+	Password string `json:"password,omitempty"`
+	IsAdmin  bool   `json:"isAdmin,omitempty"`
 }
 
 func (c *Client) Users() ([]User, error) {
 	users := make([]User, 0)
-	req, err := c.newRequest("GET", "/api/users", nil)
+	req, err := c.newRequest("GET", "/api/users", nil, nil)
 	if err != nil {
 		return users, err
 	}
@@ -41,7 +42,9 @@ func (c *Client) Users() ([]User, error) {
 
 func (c *Client) UserByEmail(email string) (User, error) {
 	user := User{}
-	req, err := c.newQueryRequest("GET", "/api/users/lookup", fmt.Sprintf("loginOrEmail=%s", email))
+	query := url.Values{}
+	query.Add("loginOrEmail", email)
+	req, err := c.newRequest("GET", "/api/users/lookup", query, nil)
 	if err != nil {
 		return user, err
 	}
@@ -57,11 +60,12 @@ func (c *Client) UserByEmail(email string) (User, error) {
 		return user, err
 	}
 	tmp := struct {
-		Id		int64	`json:"id"`
-		Email	string	`json:"email"`
-		Name	string	`json:"name"`
-		Login	string	`json:"login"`
-		IsAdmin	bool 	`json:"isGrafanaAdmin"`
+		Id       int64 	`json:"id,omitempty"`
+		Email    string	`json:"email,omitempty"`
+		Name     string	`json:"name,omitempty"`
+		Login    string	`json:"login,omitempty"`
+		Password string `json:"password,omitempty"`
+		IsAdmin  bool   `json:"isGrafanaAdmin,omitempty"`
 	}{}
 	err = json.Unmarshal(data, &tmp)
 	if err != nil {

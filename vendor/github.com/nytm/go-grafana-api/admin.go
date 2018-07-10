@@ -6,14 +6,12 @@ import (
 	"errors"
 	"fmt"
 	"io/ioutil"
-
-	"github.com/grafana/grafana/pkg/api/dtos"
 )
 
-func (c *Client) CreateUserForm(settings dtos.AdminCreateUserForm) (int64, error) {
+func (c *Client) CreateUser(user User) (int64, error) {
 	id := int64(0)
-	data, err := json.Marshal(settings)
-	req, err := c.newRequest("POST", "/api/admin/users", bytes.NewBuffer(data))
+	data, err := json.Marshal(user)
+	req, err := c.newRequest("POST", "/api/admin/users", nil, bytes.NewBuffer(data))
 	if err != nil {
 		return id, err
 	}
@@ -28,22 +26,18 @@ func (c *Client) CreateUserForm(settings dtos.AdminCreateUserForm) (int64, error
 	if err != nil {
 		return id, err
 	}
-	user := struct {
+	created := struct {
 		Id int64 `json:"id"`
 	}{}
-	err = json.Unmarshal(data, &user)
+	err = json.Unmarshal(data, &created)
 	if err != nil {
 		return id, err
 	}
-	return user.Id, err
-}
-
-func (c *Client) CreateUser(email, login, name, password string) (int64, error) {
-	return c.CreateUserForm(dtos.AdminCreateUserForm{email, login, name, password})
+	return created.Id, err
 }
 
 func (c *Client) DeleteUser(id int64) error {
-	req, err := c.newRequest("DELETE", fmt.Sprintf("/api/admin/users/%d", id), nil)
+	req, err := c.newRequest("DELETE", fmt.Sprintf("/api/admin/users/%d", id), nil, nil)
 	if err != nil {
 		return err
 	}
