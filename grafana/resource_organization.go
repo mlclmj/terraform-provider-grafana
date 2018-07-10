@@ -173,6 +173,8 @@ func ImportOrganization(d *schema.ResourceData, meta interface{}) ([]*schema.Res
 	if err != nil || !exists {
 		return nil, errors.New("Error Importing Grafana Organization")
 	}
+	d.Set("admin_user", "admin")
+	d.Set("create_users", "true")
 	err = ReadOrganization(d, meta)
 	if err != nil {
 		return nil, err
