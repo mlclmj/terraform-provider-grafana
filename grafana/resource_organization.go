@@ -33,6 +33,9 @@ func ResourceOrganization() *schema.Resource {
 		Update: UpdateOrganization,
 		Delete: DeleteOrganization,
 		Exists: ExistsOrganization,
+		Importer: &schema.ResourceImporter{
+			State: ImportOrganization,
+		},
 
 		Schema: map[string]*schema.Schema{
 			"name": &schema.Schema{
@@ -163,6 +166,18 @@ func ExistsOrganization(d *schema.ResourceData, meta interface{}) (bool, error) 
 		return false, err
 	}
 	return true, err
+}
+
+func ImportOrganization(d *schema.ResourceData, meta interface{}) ([]*schema.ResourceData, error) {
+	exists, err := ExistsOrganization(d, meta)
+	if err != nil || !exists {
+		return nil, errors.New("Error Importing Grafana Organization")
+	}
+	err = ReadOrganization(d, meta)
+	if err != nil {
+		return nil, err
+	}
+	return []*schema.ResourceData{d}, nil
 }
 
 func ReadUsers(d *schema.ResourceData, meta interface{}) error {
