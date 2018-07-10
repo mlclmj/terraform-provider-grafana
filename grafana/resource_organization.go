@@ -273,7 +273,13 @@ func createUser(meta interface{}, user string) (int64, error) {
 	}
 	pass := string(bytes[:n])
 	log.Printf("[DEBUG] creating user %s with random password", user)
-	id, err = client.CreateUser(user, user, user, pass)
+	u := gapi.User{
+		Name:     user,
+		Login:    user,
+		Email:    user,
+		Password: pass,
+	}
+	id, err = client.CreateUser(u)
 	if err != nil {
 		return id, err
 	}
